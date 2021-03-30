@@ -6,18 +6,19 @@ https://github.com/CATIA-Systems/FMPy/blob/master/fmpy/examples/custom_input.py
 
 from fmpy import read_model_description, extract
 from fmpy.fmi2 import FMU2Slave
-from fmpy.util import plot_result, download_test_file
+from fmpy.util import plot_result
 import numpy as np
 import shutil
+
 
 def simulate_custom_input(show_plot=True):
 
     # define the model name and simulation parameters
-    fmu_filename = 'fmu_test.fmu'
+    fmu_filename = 'test_integrate.fmu'
     start_time = 0.0
     threshold = 2.0
     stop_time = 10.0
-    step_size = 1e-5
+    step_size = 2e-2
 
     # download the FMU
     #download_test_file('2.0', 'CoSimulation', 'MapleSim', '2016.2', 'CoupledClutches', fmu_filename)
@@ -29,10 +30,12 @@ def simulate_custom_input(show_plot=True):
     vrs = {}
     for variable in model_description.modelVariables:
         vrs[variable.name] = variable.valueReference
+        print(variable.name)
 
     # get the value references for the variables we want to get/set
-    vr_inputs   = vrs['u']
-    vr_outputs4 = vrs['Out1']
+    vr_u = vrs['u']
+    vr_y = vrs['y']
+    vr_int = vrs['integrator_initial']
 
     # extract the FMU
     unzipdir = extract(fmu_filename)
@@ -43,7 +46,7 @@ def simulate_custom_input(show_plot=True):
                     instanceName='instance1')
 
     # initialize
-    fmu.instantiate()
+    fmu.instantiate(loggingOn=False)
     fmu.setupExperiment(startTime=start_time)
     fmu.enterInitializationMode()
     fmu.exitInitializationMode()
@@ -53,27 +56,58 @@ def simulate_custom_input(show_plot=True):
     rows = []  # list to record the results
 
     # simulation loop
+    recent_reset = False
+    outputs4 = 0.0
+    time_offset = 0
     while time < stop_time:
 
         # NOTE: the FMU.get*() and FMU.set*() functions take lists of
         # value references as arguments and return lists of values
 
         # set the input
-        fmu.setReal([vr_inputs], [0.0 if time < 1.0 else 1.0])
-
-        # perform one step
-        fmu.doStep(currentCommunicationPoint=time, communicationStepSize=step_size)
-
-        # get the values for 'inputs' and 'outputs[4]'
-        inputs, outputs4 = fmu.getReal([vr_inputs, vr_outputs4])
+        input_u_value = 0.0 if time < 1.0 else 1.0
 
         # use the threshold to terminate the simulation
         if outputs4 > threshold:
+            fmu.reset()
+            # fmu.terminate()
+            # fmu.freeInstance()
+            # fmu = FMU2Slave(guid=model_description.guid,
+            #     unzipDirectory=unzipdir,
+            #     modelIdentifier=model_description.coSimulation.modelIdentifier,
+            #     instanceName='instance1')
+            # fmu.instantiate()
+            time_offset = time
+            fmu.setupExperiment(startTime=time - time_offset)
+            fmu.enterInitializationMode()
+            fmu.setReal(vr=[vr_u, vr_int, vr_y], value=[input_u_value, 1.0, 1.0])
+            fmu.exitInitializationMode()
+            print(fmu.getReal([vr_u, vr_int, vr_y]))
+            recent_reset = True
+            print('')
             print("Threshold reached at t = %g s" % time)
-            break
+            # break
+        else:
+            fmu.setReal(vr=[vr_u], value=[input_u_value])
+            recent_reset = False
+
+        # get the values for 'inputs' and 'outputs[4]'
+        inputs, outputs4 = fmu.getReal([vr_u, vr_y])
+        if recent_reset:
+            print('In, Integrator, Out, BEFORE step')
+            print(fmu.getReal([vr_u, vr_int, vr_y]))
+            pass
 
         # append the results
         rows.append((time, inputs, outputs4))
+
+        # perform one step
+        fmu.doStep(currentCommunicationPoint=time - time_offset, communicationStepSize=step_size)
+
+        if recent_reset:
+            print('In, Integrator, Out, AFTER step')
+            print(fmu.getReal([vr_u, vr_int, vr_y]))
+            pass
 
         # advance the time
         time += step_size
@@ -91,8 +125,8 @@ def simulate_custom_input(show_plot=True):
     if show_plot:
         plot_result(result)
 
-    return time
+    return rows
 
 if __name__ == '__main__':
 
-    simulate_custom_input()
+    rows = simulate_custom_input(show_plot=False)

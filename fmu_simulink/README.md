@@ -11,4 +11,5 @@ conda install -n rlgym -y -c pytorch pytorch torchvision torchaudio cpuonly
 conda install -n rlgym -y -c conda-forge fmpy
 conda activate rlgym
 pip install gym
+pip install fmipp --prefer-binary
 ```

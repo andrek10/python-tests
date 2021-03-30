@@ -17,15 +17,14 @@ import shutil
 class FmuTestEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, path_fmu):
         # define the model name and simulation parameters
-        fmu_filename = 'fmu_test.fmu'
         start_time = 0.0
         stop_time = 10.0
-        self.step_size = 1e-5
+        self.step_size = 1e-2
 
         # read the model description
-        model_description = read_model_description(fmu_filename)
+        model_description = read_model_description(path_fmu)
 
         # collect the value references
         vrs = {}
@@ -33,11 +32,11 @@ class FmuTestEnv(gym.Env):
             vrs[variable.name] = variable.valueReference
 
         # get the value references for the variables we want to get/set
-        self.vr_inputs   = vrs['u']
+        self.vr_inputs = vrs['u']
         self.vr_output = vrs['Out1']
 
         # extract the FMU
-        unzipdir = extract(fmu_filename)
+        unzipdir = extract(path_fmu)
         self.fmu = FMU2Slave(guid=model_description.guid,
                         unzipDirectory=unzipdir,
                         modelIdentifier=model_description.coSimulation.modelIdentifier,
