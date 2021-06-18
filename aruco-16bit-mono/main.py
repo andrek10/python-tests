@@ -18,6 +18,16 @@ def maxpool(im_in, im_out):
             j2 = j1 + 2
             im_out[i, j] = np.max(im_in[i1:i2, j1:j2])
 
+@njit(cache=True)
+def average(im_in, im_out):
+    for i in range(0, im_out.shape[0]):
+        for j in range(0, im_out.shape[1]):
+            i1 = i*2
+            i2 = i1 + 2
+            j1 = j*2
+            j2 = j1 + 2
+            im_out[i, j] = np.round(np.mean(im_in[i1:i2, j1:j2]))
+
 def resize(im_in, s=1.0):
     im = np.array(im_in, copy=True)
     return cv2.resize(im, (int(s*im.shape[1]), int(s*im.shape[0])))
@@ -57,7 +67,11 @@ class ArUcoDetectorCustom:
         """
         Set the adaptive threshold window step to 2 instead of 10
         """
-        self.aruco_parameters.adaptiveThreshWinSizeStep = 1
+        self.aruco_parameters.adaptiveThreshWinSizeStep = 2
+        self.aruco_parameters.adaptiveThreshWinSizeMin = 7
+        self.aruco_parameters.adaptiveThreshWinSizeMax = 7
+        # self.aruco_parameters.minMarkerPerimeterRate = 0.02
+        # self.aruco_parameters.polygonalApproxAccuracyRate = 0.05
         corners, ids, rejectedImgPoints = aruco.detectMarkers(image, self.aruco_dict, parameters=self.aruco_parameters)
         return corners, ids, rejectedImgPoints
 
@@ -65,15 +79,15 @@ class ArUcoDetectorCustom:
         """
         Iteratively test multiple adative threshold window steps.
         """
-        for i in range(1, 23):
-            self.aruco_parameters.adaptiveThreshWinSizeStep = i
+        for i in range(3, 100, 2):
+            self.aruco_parameters.adaptiveThreshWinSizeStep = 2
+            self.aruco_parameters.adaptiveThreshWinSizeMin = i
+            self.aruco_parameters.adaptiveThreshWinSizeMax = i
             corners, ids, rejectedImgPoints = aruco.detectMarkers(image, self.aruco_dict, parameters=self.aruco_parameters)
             if ids is None:
                 pass
             elif len(ids) > 0:
-                if i != 1:
-                    print(f'Custom2: Found on step {i}')
-                break
+                print(f'Found Id {ids[0, 0]} on step {i}')
         return corners, ids, rejectedImgPoints
 
     def custom3(self, image):
@@ -89,6 +103,15 @@ class ArUcoDetectorCustom:
                 break
         return corners, ids, rejectedImgPoints
 
+def adaptiveThreshold(im_in, block_size):
+    src = np.array(im_in, copy=True)
+    maxValue = 255  # What is assigned
+    adaptiveMethod = cv2.ADAPTIVE_THRESH_MEAN_C
+    thresholdType = cv2.THRESH_BINARY
+    blockSize = block_size
+    im = cv2.adaptiveThreshold(src, maxValue, adaptiveMethod, thresholdType, blockSize, 7)
+    return im
+
 def imshow(title, im):
     fig, ax = plt.subplots(figsize=(8,8))
     ax.imshow(im)
@@ -97,11 +120,18 @@ def imshow(title, im):
 
 filename = config.filename
 bool_maxpool = config.bool_maxpool
+bool_average = config.bool_average
+
+assert bool_average + bool_maxpool < 2
 
 data_orig = cv2.imread(filename, cv2.IMREAD_ANYDEPTH)
 if bool_maxpool:
     data = np.zeros((data_orig.shape[0]//2, data_orig.shape[1]//2))
     maxpool(data_orig, data)
+    scale = 1.0
+elif bool_average:
+    data = np.zeros((data_orig.shape[0]//2, data_orig.shape[1]//2))
+    average(data_orig, data)
     scale = 1.0
 else:
     data = data_orig
@@ -126,9 +156,19 @@ imshow(f'orignal_rejected', image_color)
 image = np.array(image_copy, copy=True)
 image_color = get_color_image(image)
 
-aruco_detector = ArUcoDetectorCustom(1)
+aruco_detector = ArUcoDetectorCustom(2)
 corners, ids, rejectedImgPoints = aruco_detector.detect(image)
+print('With custom found:')
+print(ids)
 aruco.drawDetectedMarkers(image_color, corners, ids)
 imshow(f'custom', image_color)
+image_color = get_color_image(image_copy)
+aruco.drawDetectedMarkers(image_color, rejectedImgPoints)
+imshow(f'custom_rejected', image_color)
+
+image = np.array(image_copy, copy=True)
+image_color = get_color_image(image)
+image_thresh = adaptiveThreshold(image, 5)
+imshow(f'threshold', image_thresh)
 
 plt.show()
